@@ -258,11 +258,11 @@ Stations<-read_csv("http://www.macalester.edu/~dshuman1/data/112/DC-Stations.csv
   9. Use the latitude and longitude variables in `Stations` to make a visualization of the total number of departures from each station in the `Trips` data. Use either color or size to show the variation in number of departures. This time, plot the points on top of a map. Use any of the mapping tools you'd like.
   
 ```{r}
-Stations %>%
+Stations2 <- Stations %>%
   left_join(Trips,
   by = c("name" = "sstation")) %>%
-  group_by(name) %>% 
-  mutate(total_departures = n()) %>%
+  group_by(long, lat) %>% 
+  summarize(total_departures = n())
 
 Washington_DC <- get_stamenmap(
     bbox = c(left = -77.1732, bottom = 38.8159, right = -76.7990, top = 39.0058), 
@@ -270,18 +270,36 @@ Washington_DC <- get_stamenmap(
     zoom = 11)
 
 ggmap(Washington_DC) + 
-  geom_point(data = Stations, 
-             aes(x = Longitude, y = Latitude, color = `total_departures`), 
+  geom_point(data = Stations2, 
+             aes(x = long, y = lat, color = total_departures), 
              size = 3) +
   theme_map() +
   theme(legend.background = element_blank())
+  scale_color_viridis_c()
 ```
   
   10. Only 14.4% of the trips in our data are carried out by casual users. Create a plot that shows which area(s) have stations with a much higher percentage of departures by casual users. What patterns do you notice? Also plot this on top of a map. I think it will be more clear what the patterns are.
   
 ```{r}
+Stations2 <- Stations %>%
+  left_join(Trips,
+  by = c("name" = "sstation")) %>%
+  group_by(long, lat) %>% 
+  summarize(percent_casual= mean(client == "Casual")) 
 
+Washington_DC <- get_stamenmap(
+    bbox = c(left = -77.1732, bottom = 38.8159, right = -76.7990, top = 39.0058), 
+    maptype = "toner-2011",
+    zoom = 11)
+
+ggmap(Washington_DC) + 
+  geom_point(data = Stations2, 
+             aes(x = long, y = lat, color = percent_casual), 
+             size = 3) +
+  theme_map() +
+  scale_color_viridis_c()
 ```
+  As I guessed in problem set 3, there is a high percentage of casual riders that rent out their bikes from stations in the downtown area, especially along the river. It is very common for tourists exploring the city, which can be identified as casual riders, to take a bike ride along a scenic river route. This therefore explains the high percentage of casual riders at these stations in the downtown area and along the river side of the downtown area. 
   
 ### COVID-19 data
 
@@ -293,27 +311,88 @@ The following exercises will use the COVID-19 data from the NYT.
 states_map <- map_data("state")
 
 covid19 %>% 
-  group_by(state, cases) %>%
-  ggplot() +
+  group_by(state) %>%
+  summarize(cumulative_cases = max(cases)) %>%
+  mutate(state = str_to_lower(state)) %>%
+  ggplot(aes(fill = cumulative_cases)) +
   geom_map(map = states_map,
-           aes(map_id = state,
-               fill = cases)) +
+           aes(map_id = state)) +
   expand_limits(x = states_map$long, y = states_map$lat) + 
   labs(title = "Cumulative COVID-19 cases in the United States") +
   theme(legend.background = element_blank()) + 
   theme_map() +
   scale_fill_viridis_c()
 ```
+In this visualization, the number of COVID-19 cases are not proportional to the population number in each state, therefore this visualization is not necessarily a fair way to compare states. 
 
   12. Now add the population of each state to the dataset and color the states by most recent cumulative cases/10,000 people. See the code for doing this with the Starbucks data. You will need to make some modifications. 
   
+```{r}
+covid19_population <-
+  covid19 %>% 
+  mutate(state = str_to_lower(state)) %>%
+  left_join(census_pop_est_2018,
+            by = "state") %>% 
+  group_by(state, est_pop_2018) %>%
+  summarize(cumulative_cases = max(cases)) %>%
+  mutate(cases_per_10000 = (cumulative_cases/est_pop_2018)*10000)
+
+states_map <- map_data("state")
+
+covid19_population %>% 
+  mutate(state = str_to_lower(state)) %>%
+  ggplot() +
+  geom_map(map = states_map,
+           aes(map_id = state, fill = cases_per_10000)) +
+  expand_limits(x = states_map$long, y = states_map$lat) + 
+  labs(title = "Cumulative COVID-19 cases per 10,000 people in the United States") +
+  theme(legend.background = element_blank()) + 
+  theme_map() +
+  scale_fill_viridis_c()
+  
+```
+  
   13. **CHALLENGE** Choose 4 dates spread over the time period of the data and create the same map as in exercise 12 for each of the dates. Display the four graphs together using faceting. What do you notice?
+  
+```{r}
+covid19_date <-
+  covid19 %>% 
+  filter(date %in% ymd(c("2020-04-04", "2020-06-14", "2020-07-17", "2020-09-25"))) %>% 
+  mutate(state = str_to_lower(state)) %>%
+  left_join(census_pop_est_2018,
+            by = "state") %>% 
+  mutate(cases_per_10000 = (cases/est_pop_2018)*10000)
+
+covid19_date %>%
+  mutate(state = str_to_lower(state)) %>%
+  ggplot() +
+  geom_map(map = states_map,
+           aes(map_id = state, fill = cases_per_10000)) +
+  expand_limits(x = states_map$long, y = states_map$lat) + 
+  facet_wrap(~date) +
+  labs(title = "Cumulative COVID-19 cases per 10,000 people in the United States") +
+  theme_map() +
+  theme(legend.background = element_blank()) +
+  scale_fill_viridis_c()
+```
+  
   
 ## Minneapolis police stops
 
 This exercise uses the datasets `MplsStops` and `MplsDemo` from the `carData` library. Search for them in Help to find out more information.
 
   14. Use the `MplsStops` dataset to find out how many stops there were for each neighborhood and the proportion of stops that were for a suspicious vehicle or person. Sort the results from most to least number of stops. Save this as a dataset called `mpls_suspicious` and display the table.  
+  
+```{r}
+mpls_suspicious <- MplsStops %>%
+  group_by(neighborhood) %>%
+  count(problem) %>%
+  mutate(proportion_suspicious = n/sum(n)) %>%
+  filter(problem == "suspicious")
+
+mpls_suspicious %>%
+  arrange(desc(n))
+```
   
   15. Use a `leaflet` map and the `MplsStops` dataset to display each of the stops on a map as a small point. Color the points differently depending on whether they were for suspicious vehicle/person or a traffic stop (the `problem` variable). HINTS: use `addCircleMarkers`, set `stroke = FAlSE`, use `colorFactor()` to create a palette.  
   
